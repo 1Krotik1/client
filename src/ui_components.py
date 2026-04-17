@@ -22,8 +22,13 @@ def create_card(title, subtitle, icon, right_content=None):
         bgcolor=BG_CARD_COLOR,
         border_radius=10,
         padding=20,
-        margin=ft.margin.symmetric(vertical=10),
-        border=ft.border.all(1, ft.Colors.BLACK12)
+        margin=ft.Margin.only(top=10, bottom=10),
+        border=ft.Border(
+            top=ft.BorderSide(1, ft.Colors.BLACK12),
+            right=ft.BorderSide(1, ft.Colors.BLACK12),
+            bottom=ft.BorderSide(1, ft.Colors.BLACK12),
+            left=ft.BorderSide(1, ft.Colors.BLACK12)
+        )
     )
 
 def create_status_badge(text):

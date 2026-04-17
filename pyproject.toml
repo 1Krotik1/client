@@ -9,6 +9,7 @@ authors = [
 ]
 dependencies = [
     "flet>=0.84.0",
+    "flet-charts>=0.84.0",
     "websockets>=16.0",
 ]
 

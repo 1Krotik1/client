@@ -6,6 +6,8 @@ class AppState:
         self.relay_state = False
         self.temp_val = "25"
         self.hum_val = "30"
+        self.relay_history = []
+        self.sensor_history = []
         self.on_state_change = None
 
     def update(self):

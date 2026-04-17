@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 import websockets
 from app_state import AppState
 
@@ -17,6 +18,11 @@ class WSClient:
                 self.state.hub_connected = True
                 self.state.update()
                 
+                # Синхронизация времени хаба с клиентом
+                await websocket.send(f"time/sync/{int(time.time())}")
+                # Запросить текущую историю
+                await websocket.send("history/get")
+                
                 async for message in websocket:
                     try:
                         data = json.loads(message)
@@ -31,6 +37,9 @@ class WSClient:
                             self.state.relay_connected = bool(data.get("connected", False))
                         elif data.get("type") == "sensor_connection":
                             self.state.sensor_connected = bool(data.get("connected", False))
+                        elif data.get("type") == "history":
+                            self.state.relay_history = data.get("relay", [])
+                            self.state.sensor_history = data.get("sensor", [])
                         self.state.update()
                     except json.JSONDecodeError:
                         pass
@@ -56,3 +65,10 @@ class WSClient:
             except Exception as ex:
                 print(f"Failed to send relay command: {ex}")
         self.state.update()
+
+    async def request_history(self):
+        if self.ws_connection:
+            try:
+                await self.ws_connection.send("history/get")
+            except Exception as ex:
+                print(f"Failed to request history: {ex}")
