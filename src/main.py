@@ -53,8 +53,8 @@ async def main(page: ft.Page):
     view_main = ft.Column([
         create_status_badge("HUB: Ожидание..."),
         ft.Container(height=10),
-        create_card("Реле", "Ожидание...", ft.Icons.WIFI),
-        create_card("Датчик температуры", "Ожидание...", ft.Icons.WIFI)
+        create_card("Реле", "Ожидание...", ft.Icons.WIFI_OFF),
+        create_card("Датчик температуры", "Ожидание...", ft.Icons.WIFI_OFF)
     ])
 
     # 2. Секция: Реле
@@ -133,10 +133,20 @@ async def main(page: ft.Page):
     ])
 
     def update_all_views():
+        def _get_last_time(history):
+            if not history: return "нет данных"
+            ts = history[-1].get("time", 0)
+            if ts > 946684800: return datetime.fromtimestamp(ts).strftime('%H:%M:%S')
+            elif ts > 0: return f"до синхр. (+{ts}с)"
+            return "нет времени"
+            
+        last_relay = _get_last_time(state.relay_history)
+        last_sensor = _get_last_time(state.sensor_history)
+
         # 1. Главная
         view_main.controls[0] = create_status_badge(f"HUB: {'Подключен' if state.hub_connected else 'Отключен'}")
-        view_main.controls[2] = create_card("Реле", f"Положения: {'включен' if state.relay_state else 'выключен'}", ft.Icons.WIFI)
-        view_main.controls[3] = create_card("Датчик температуры", f"Температура: {state.temp_val} C\nВлажность: {state.hum_val} %", ft.Icons.WIFI)
+        view_main.controls[2] = create_card("Реле", f"Положения: {'включен' if state.relay_state else 'выключен'}\nОбновлено: {last_relay}", ft.Icons.WIFI if state.relay_connected else ft.Icons.WIFI_OFF)
+        view_main.controls[3] = create_card("Датчик температуры", f"Температура: {state.temp_val} C\nВлажность: {state.hum_val} %\nОбновлено: {last_sensor}", ft.Icons.WIFI if state.sensor_connected else ft.Icons.WIFI_OFF)
         
         # 2. Реле
         view_relay.controls[0].controls[0] = create_status_badge(f"Реле: {'Подключен' if state.relay_connected else 'Отключен'}")
