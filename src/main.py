@@ -13,9 +13,36 @@ async def main(page: ft.Page):
     page.window.width = 400
     page.window.height = 800
 
+    # Простой механизм хранения настроек в файле
+    import json
+    import os
+    config_file = "client_config.json"
+    
+    def load_ip():
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, "r") as f:
+                    return json.load(f).get("hub_ip", "")
+            except Exception:
+                pass
+        return ""
+
+    def save_ip(ip):
+        try:
+            with open(config_file, "w") as f:
+                json.dump({"hub_ip": ip}, f)
+        except Exception:
+            pass
+
     # Инициализация состояния и WebSocket-клиента
     state = AppState()
-    ws_client = WSClient(state, hub_ip="192.168.4.1")
+    
+    # Читаем сохраненный адрес из хранилища клиента.
+    # Если его там нет, используем mDNS по умолчанию.
+    stored_ip = load_ip()
+    initial_ip = stored_ip if (stored_ip and stored_ip.strip()) else "smarthome.local"
+    
+    ws_client = WSClient(state, hub_ip=initial_ip)
 
     def create_button_with_action(text, icon, action):
         btn = create_button(text, icon)
@@ -49,7 +76,7 @@ async def main(page: ft.Page):
                 ft.Text("История активности Реле", weight=ft.FontWeight.W_600, text_align=ft.TextAlign.CENTER),
                 ft.Container(height=10),
                 ft.Row([
-                    ft.Text("Время", weight=ft.FontWeight.W_500, expand=1),
+                    ft.Text("Дата и Время", weight=ft.FontWeight.W_500, expand=1),
                     ft.Text("Статус", weight=ft.FontWeight.W_500, expand=1, text_align=ft.TextAlign.RIGHT),
                 ]),
                 ft.Divider(height=1, color=ft.Colors.BLACK12),
@@ -105,10 +132,6 @@ async def main(page: ft.Page):
         )
     ])
 
-    views = [view_main, view_relay, view_temp]
-    
-    current_view_container = ft.Container(content=views[0], expand=True, padding=20)
-    
     def update_all_views():
         # 1. Главная
         view_main.controls[0] = create_status_badge(f"HUB: {'Подключен' if state.hub_connected else 'Отключен'}")
@@ -140,7 +163,7 @@ async def main(page: ft.Page):
         for item in reversed(state.relay_history): # Свежие сверху
             ts = item.get("time", 0)
             st = item.get("state", 0)
-            dt_str = datetime.fromtimestamp(ts).strftime('%H:%M:%S') if ts > 0 else "N/A"
+            dt_str = datetime.fromtimestamp(ts).strftime('%d.%m.%Y %H:%M:%S') if ts > 0 else "N/A"
             status_str = "Включено" if st == 1 else "Выключено"
             color = PRIMARY_COLOR if st == 1 else ft.Colors.BLACK54
             
@@ -160,10 +183,17 @@ async def main(page: ft.Page):
                 # Сортируем по времени (старые -> новые)
                 sorted_hist = sorted([h for h in state.sensor_history if h.get("time",0) > 0], key=lambda x: x.get("time",0))
                 
+                x_labels = []
+                step = max(1, len(sorted_hist) // 5) # Показывать не более ~5-6 дат
+                
                 # Делаем X-ось от 0 до N
                 for i, item in enumerate(sorted_hist):
                     points_temp.append(fch.LineChartDataPoint(i, item.get("temp", 0)))
                     points_hum.append(fch.LineChartDataPoint(i, item.get("hum", 0)))
+                    
+                    if i % step == 0 or i == len(sorted_hist) - 1:
+                        dt_text = datetime.fromtimestamp(item.get("time", 0)).strftime('%d.%m\n%H:%M')
+                        x_labels.append(fch.ChartAxisLabel(value=i, label=ft.Text(dt_text, size=10, text_align=ft.TextAlign.CENTER)))
                 
                 if points_temp:
                     chart = fch.LineChart(
@@ -190,7 +220,7 @@ async def main(page: ft.Page):
                         horizontal_grid_lines=fch.ChartGridLines(interval=10, color=ft.Colors.BLACK12, width=1),
                         vertical_grid_lines=fch.ChartGridLines(interval=10, color=ft.Colors.BLACK12, width=1),
                         left_axis=fch.ChartAxis(label_size=40),
-                        bottom_axis=fch.ChartAxis(label_size=40, show_labels=False), # Скрываем X так как там просто индекс
+                        bottom_axis=fch.ChartAxis(labels=x_labels, label_size=35), # Показываем X с датой и временем
                         tooltip=fch.LineChartTooltip(bgcolor=ft.Colors.WHITE),
                         expand=True,
                         min_x=0,
@@ -228,6 +258,64 @@ async def main(page: ft.Page):
         except Exception as ex:
             print(f"Failed to update page: {ex}")
 
+    # 4. Секция: Настройки
+    settings_ip_input = ft.TextField(
+        label="IP адрес или mDNS-имя хаба",
+        value=initial_ip,
+        border_color=PRIMARY_COLOR,
+        focused_border_color=PRIMARY_COLOR,
+        expand=True
+    )
+    
+    def save_settings(e):
+        new_ip = settings_ip_input.value.strip()
+        if new_ip:
+            save_ip(new_ip)
+            ws_client.hub_ip = new_ip
+            # Обрываем текущее websocket-подключение, чтобы класс WSClient автоматически
+            # ушел в перезапуск с новым IP-адресом
+            if ws_client.ws_connection:
+                asyncio.create_task(ws_client.ws_connection.close())
+                
+            page.snack_bar = ft.SnackBar(ft.Text(f"Настройки сохранены: {new_ip}. Переподключение..."), bgcolor=ft.Colors.GREEN)
+            page.snack_bar.open = True
+            page.update()
+
+    view_settings = ft.Column([
+        ft.Row([
+            create_status_badge("Настройки подключения"),
+        ], alignment=ft.MainAxisAlignment.START),
+        ft.Container(height=10),
+        ft.Container(
+            content=ft.Column([
+                ft.Text("Измените адрес, если mDNS в вашей Wi-Fi сети не поддерживается", size=14, color=ft.Colors.BLACK54),
+                ft.Container(height=10),
+                ft.Row([
+                    settings_ip_input,
+                ]),
+                ft.Container(height=10),
+                ft.Row([
+                    ft.ElevatedButton("Сохранить и переподключиться", on_click=save_settings, bgcolor=PRIMARY_COLOR, color=ft.Colors.WHITE)
+                ], alignment=ft.MainAxisAlignment.CENTER)
+            ]),
+            bgcolor=BG_CARD_COLOR,
+            border_radius=10,
+            padding=20,
+            margin=ft.Margin.only(top=10, bottom=10),
+            border=ft.Border(
+                top=ft.BorderSide(1, ft.Colors.BLACK12),
+                right=ft.BorderSide(1, ft.Colors.BLACK12),
+                bottom=ft.BorderSide(1, ft.Colors.BLACK12),
+                left=ft.BorderSide(1, ft.Colors.BLACK12)
+            ),
+            expand=True
+        )
+    ])
+
+    views = [view_main, view_relay, view_temp, view_settings]
+    
+    current_view_container = ft.Container(content=views[0], expand=True, padding=20)
+    
     # Привязываем обновление UI к изменению состояния
     state.on_state_change = update_all_views
 
@@ -242,6 +330,7 @@ async def main(page: ft.Page):
             ft.NavigationBarDestination(icon=ft.Icons.LIST, label="Главная"),
             ft.NavigationBarDestination(icon=ft.Icons.STAR_BORDER, selected_icon=ft.Icons.STAR, label="Реле"),
             ft.NavigationBarDestination(icon=ft.Icons.STAR_BORDER, selected_icon=ft.Icons.STAR, label="Температура"),
+            ft.NavigationBarDestination(icon=ft.Icons.SETTINGS_OUTLINED, selected_icon=ft.Icons.SETTINGS, label="Настройки"),
         ],
         on_change=on_nav_change,
         selected_index=0,

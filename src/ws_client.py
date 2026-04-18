@@ -43,6 +43,9 @@ class WSClient:
                         self.state.update()
                     except json.JSONDecodeError:
                         pass
+        except asyncio.CancelledError:
+            # Прерываем цикл, если задача отменена (например, при выходе)
+            return
         except Exception as e:
             print(f"WS error: {e}")
         finally:
@@ -52,9 +55,15 @@ class WSClient:
             self.state.sensor_connected = False
             self.state.update()
             
-            # Попытка переподключения через 5 секунд
-            await asyncio.sleep(5)
-            asyncio.create_task(self.connect())
+            try:
+                # Попытка переподключения через 5 секунд, если приложение еще живо
+                await asyncio.sleep(5)
+                asyncio.create_task(self.connect())
+            except asyncio.CancelledError:
+                pass
+            except RuntimeError:
+                # Event loop closed
+                pass
 
     async def toggle_relay(self, relay_on: bool):
         self.state.relay_state = relay_on
