@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import json
 import time
 import websockets
@@ -9,61 +9,59 @@ class WSClient:
         self.state = state
         self.hub_ip = hub_ip
         self.ws_connection = None
+        self.is_running = True
 
     async def connect(self):
         uri = f"ws://{self.hub_ip}:81"
-        try:
-            async with websockets.connect(uri) as websocket:
-                self.ws_connection = websocket
-                self.state.hub_connected = True
-                self.state.update()
-                
-                # Синхронизация времени хаба с клиентом
-                await websocket.send(f"time/sync/{int(time.time())}")
-                # Запросить текущую историю
-                await websocket.send("history/get")
-                
-                async for message in websocket:
-                    try:
-                        data = json.loads(message)
-                        if data.get("type") == "sensor_data":
-                            self.state.temp_val = str(data.get('temperature', self.state.temp_val))
-                            self.state.hum_val = str(data.get('humidity', self.state.hum_val))
-                            self.state.sensor_connected = True
-                        elif data.get("type") == "relay_state":
-                            self.state.relay_state = bool(data.get("state", False))
-                            self.state.relay_connected = True
-                        elif data.get("type") == "relay_connection":
-                            self.state.relay_connected = bool(data.get("connected", False))
-                        elif data.get("type") == "sensor_connection":
-                            self.state.sensor_connected = bool(data.get("connected", False))
-                        elif data.get("type") == "history":
-                            self.state.relay_history = data.get("relay", [])
-                            self.state.sensor_history = data.get("sensor", [])
-                        self.state.update()
-                    except json.JSONDecodeError:
-                        pass
-        except asyncio.CancelledError:
-            # Прерываем цикл, если задача отменена (например, при выходе)
-            return
-        except Exception as e:
-            print(f"WS error: {e}")
-        finally:
-            self.ws_connection = None
-            self.state.hub_connected = False
-            self.state.relay_connected = False
-            self.state.sensor_connected = False
-            self.state.update()
-            
+        while self.is_running:
             try:
-                # Попытка переподключения через 5 секунд, если приложение еще живо
-                await asyncio.sleep(5)
-                asyncio.create_task(self.connect())
+                async with websockets.connect(uri) as websocket:
+                    self.ws_connection = websocket
+                    self.state.hub_connected = True
+                    self.state.update()
+
+                    # Синхронизация времени хаба с клиентом
+                    await websocket.send(f"time/sync/{int(time.time())}")
+                    # Запросить текущую историю
+                    await websocket.send("history/get")
+
+                    async for message in websocket:
+                        try:
+                            data = json.loads(message)
+                            if data.get("type") == "sensor_data":
+                                self.state.temp_val = str(data.get('temperature', self.state.temp_val))
+                                self.state.hum_val = str(data.get('humidity', self.state.hum_val))
+                                self.state.sensor_connected = True
+                            elif data.get("type") == "relay_state":
+                                self.state.relay_state = bool(data.get("state", False))
+                                self.state.relay_connected = True
+                            elif data.get("type") == "relay_connection":
+                                self.state.relay_connected = bool(data.get("connected", False))
+                            elif data.get("type") == "sensor_connection":
+                                self.state.sensor_connected = bool(data.get("connected", False))
+                            elif data.get("type") == "history":
+                                self.state.relay_history = data.get("relay", [])
+                                self.state.sensor_history = data.get("sensor", [])
+                            self.state.update()
+                        except json.JSONDecodeError:
+                            pass
             except asyncio.CancelledError:
-                pass
-            except RuntimeError:
-                # Event loop closed
-                pass
+                self.is_running = False
+                break
+            except Exception as e:
+                print(f"WS error: {e}")
+            finally:
+                self.ws_connection = None
+                self.state.hub_connected = False
+                self.state.relay_connected = False
+                self.state.sensor_connected = False
+                self.state.update()
+
+            if self.is_running:
+                try:
+                    await asyncio.sleep(5)
+                except asyncio.CancelledError:
+                    break
 
     async def toggle_relay(self, relay_on: bool):
         self.state.relay_state = relay_on
