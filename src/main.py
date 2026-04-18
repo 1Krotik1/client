@@ -189,15 +189,33 @@ async def main(page: ft.Page):
                 # Сортируем по времени (старые -> новые)
                 sorted_hist = sorted([h for h in state.sensor_history if h.get("time",0) > 0], key=lambda x: x.get("time",0))
                 
-                x_labels = []
-                step = max(1, len(sorted_hist) // 5) # Показывать не более ~5-6 дат
+                # Если точек слишком много, берем только последние 100-150, чтобы график не тормозил при отрисовке и наведении
+                if len(sorted_hist) > 100:
+                    sorted_hist = sorted_hist[-100:]
                 
+                x_labels = []
+                step = max(1, len(sorted_hist) // 8) # Показываем больше дат (до ~8-9)
+
                 # Делаем X-ось от 0 до N
                 for i, item in enumerate(sorted_hist):
-                    points_temp.append(fch.LineChartDataPoint(i, item.get("temp", 0)))
-                    points_hum.append(fch.LineChartDataPoint(i, item.get("hum", 0)))
+                    ts = item.get("time", 0)
+                    date_str = datetime.fromtimestamp(ts).strftime('%d.%m.%Y') if ts > 946684800 else ""
+                    time_str = datetime.fromtimestamp(ts).strftime('%H:%M:%S') if ts > 946684800 else ("--" if ts <= 0 else f"+{ts}с")
+                    temp_v = item.get("temp", 0)
+                    hum_v = item.get("hum", 0)
+
+                    # Единый тултип для обеих точек на этой оси X
+                    full_tooltip = f"{date_str}\n{time_str}\nТемпература: {temp_v} °C\nВлажность: {hum_v} %".strip()
                     
+                    points_temp.append(fch.LineChartDataPoint(i, temp_v, tooltip=full_tooltip))
+                    # Передаем пробел — иногда Flet отключает тултипы целиком, если у одной линии его нет или show_tooltip=False
+                    points_hum.append(fch.LineChartDataPoint(i, hum_v, tooltip=" "))
+
                     if i % step == 0 or i == len(sorted_hist) - 1:
+                        # Убираем предыдущую метку, если последняя находится слишком близко к ней (чтобы избежать наложения)
+                        if i == len(sorted_hist) - 1 and len(x_labels) > 0 and (i - x_labels[-1].value) < step * 0.7:
+                            x_labels.pop()
+                            
                         ts = item.get("time", 0)
                         if ts > 946684800:
                             dt_text = datetime.fromtimestamp(ts).strftime('%d.%m\n%H:%M')
@@ -205,29 +223,36 @@ async def main(page: ft.Page):
                             dt_text = f"+{ts}с"
                         else:
                             dt_text = "--"
-                        x_labels.append(fch.ChartAxisLabel(value=i, label=ft.Text(dt_text, size=10, text_align=ft.TextAlign.CENTER)))
-                
+                        x_labels.append(fch.ChartAxisLabel(
+                            value=i, 
+                            label=ft.Container(
+                                content=ft.Text(dt_text, size=10, text_align=ft.TextAlign.CENTER),
+                                padding=ft.Padding(top=10, left=0, right=0, bottom=0)
+                            )
+                        ))
+
                 if points_temp:
                     all_vals = [item.get("temp", 0) for item in sorted_hist] + [item.get("hum", 0) for item in sorted_hist]
                     min_val = min(all_vals) if all_vals else 0
                     max_val = max(all_vals) if all_vals else 100
-                    
-                    calced_min_y = max(0, int(min_val - 5))
-                    calced_max_y = int(max_val + 5)
-                    y_interval = max(1, (calced_max_y - calced_min_y) // 5)
-                    
+
+                    calced_min_y = max(0, int((min_val - 2) // 5) * 5)
+                    calced_max_y = int((max_val + 6) // 5) * 5
+                    y_dist = max(5, calced_max_y - calced_min_y)
+                    y_interval = max(5, (y_dist // 25) * 5)
+
                     chart = fch.LineChart(
                         data_series=[
                             fch.LineChartData(
                                 points=points_temp,
-                                stroke_width=2,
-                                color=PRIMARY_COLOR,
+                                stroke_width=3,
+                                color=ft.Colors.BLUE,
                                 curved=True
                             ),
                             fch.LineChartData(
                                 points=points_hum,
-                                stroke_width=2,
-                                color=ft.Colors.BLUE,
+                                stroke_width=3,
+                                color=ft.Colors.PURPLE_200,
                                 curved=True
                             )
                         ],
@@ -237,23 +262,34 @@ async def main(page: ft.Page):
                             bottom=ft.BorderSide(1, ft.Colors.TRANSPARENT),
                             left=ft.BorderSide(1, ft.Colors.TRANSPARENT)
                         ),
-                        horizontal_grid_lines=fch.ChartGridLines(interval=y_interval, color=ft.Colors.BLACK_12, width=1),
-                        vertical_grid_lines=fch.ChartGridLines(interval=step, color=ft.Colors.BLACK_12, width=1),
-                        left_axis=fch.ChartAxis(labels=[fch.ChartAxisLabel(value=v, label=ft.Text(str(int(v)), size=12)) for v in range(calced_min_y, calced_max_y + y_interval, y_interval)], label_size=40),
-                        bottom_axis=fch.ChartAxis(labels=x_labels, label_size=35), # Показываем X с датой и временем
-                        tooltip=fch.LineChartTooltip(bgcolor=ft.Colors.WHITE),
+                        horizontal_grid_lines=fch.ChartGridLines(interval=y_interval, color=ft.Colors.BLACK_26, width=0.5, dash_pattern=[2, 4]),
+                        vertical_grid_lines=fch.ChartGridLines(interval=step, color=ft.Colors.BLACK_26, width=0.5, dash_pattern=[2, 4]),
+                        left_axis=fch.ChartAxis(
+                            labels=[
+                                fch.ChartAxisLabel(
+                                    value=v, 
+                                    label=ft.Text(f"{int(v)}   ", size=11, color=ft.Colors.BLACK_54, weight=ft.FontWeight.W_500)
+                                ) for v in range(calced_min_y, calced_max_y + y_interval, y_interval)
+                            ],
+                            label_size=40
+                        ),
+                        bottom_axis=fch.ChartAxis(
+                            labels=x_labels, 
+                            label_size=50
+                        ), # Показываем X с датой и временем
+                        tooltip=fch.LineChartTooltip(bgcolor=ft.Colors.with_opacity(0.8, ft.Colors.BLUE_GREY_900)),
                         expand=True,
                         min_x=0,
                         max_x=len(points_temp)-1 if points_temp else 10,
                         min_y=calced_min_y,
                         max_y=calced_max_y
                     )
-                    
+
                     chart_legend = ft.Row([
-                        ft.Container(width=10, height=10, bgcolor=PRIMARY_COLOR, border_radius=5),
-                        ft.Text("Темп.", size=12),
                         ft.Container(width=10, height=10, bgcolor=ft.Colors.BLUE, border_radius=5),
-                        ft.Text("Влажн.", size=12)
+                        ft.Text("Темп.", size=12),
+                        ft.Container(width=10, height=10, bgcolor=ft.Colors.PURPLE_200, border_radius=5),
+                        ft.Text("Влажн.", size=12),
                     ], alignment=ft.MainAxisAlignment.CENTER)
                     
                     chart_container.content = ft.Column([
@@ -263,6 +299,8 @@ async def main(page: ft.Page):
                 else:
                     chart_container.content = ft.Text("Недостаточно данных для графика", color=ft.Colors.BLACK_54)
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 print(f"Chart error: {e}")
                 chart_container.content = ft.Text("Ошибка построения графика", color=ft.Colors.RED)
         else:
