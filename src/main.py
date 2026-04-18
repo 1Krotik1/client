@@ -385,9 +385,9 @@ async def main(page: ft.Page):
     # Нижняя панель навигации (NavigationBar)
     page.navigation_bar = ft.NavigationBar(
         destinations=[
-            ft.NavigationBarDestination(icon=ft.Icons.LIST, label="Главная"),
-            ft.NavigationBarDestination(icon=ft.Icons.STAR_BORDER, selected_icon=ft.Icons.STAR, label="Реле"),
-            ft.NavigationBarDestination(icon=ft.Icons.STAR_BORDER, selected_icon=ft.Icons.STAR, label="Температура"),
+            ft.NavigationBarDestination(icon=ft.Icons.HOME_OUTLINED, selected_icon=ft.Icons.HOME, label="Главная"),
+            ft.NavigationBarDestination(icon=ft.Icons.POWER_OUTLINED, selected_icon=ft.Icons.POWER, label="Реле"),
+            ft.NavigationBarDestination(icon=ft.Icons.THERMOSTAT_OUTLINED, selected_icon=ft.Icons.THERMOSTAT, label="Температура"),
             ft.NavigationBarDestination(icon=ft.Icons.SETTINGS_OUTLINED, selected_icon=ft.Icons.SETTINGS, label="Настройки"),
         ],
         on_change=on_nav_change,
