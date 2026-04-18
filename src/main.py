@@ -79,7 +79,7 @@ async def main(page: ft.Page):
                     ft.Text("Дата и Время", weight=ft.FontWeight.W_500, expand=1),
                     ft.Text("Статус", weight=ft.FontWeight.W_500, expand=1, text_align=ft.TextAlign.RIGHT),
                 ]),
-                ft.Divider(height=1, color=ft.Colors.BLACK12),
+                ft.Divider(height=1, color=ft.Colors.BLACK_12),
                 relay_history_column
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
             bgcolor=BG_CARD_COLOR,
@@ -87,10 +87,10 @@ async def main(page: ft.Page):
             padding=20,
             margin=ft.Margin.only(top=10, bottom=10),
             border=ft.Border(
-                top=ft.BorderSide(1, ft.Colors.BLACK12),
-                right=ft.BorderSide(1, ft.Colors.BLACK12),
-                bottom=ft.BorderSide(1, ft.Colors.BLACK12),
-                left=ft.BorderSide(1, ft.Colors.BLACK12)
+                top=ft.BorderSide(1, ft.Colors.BLACK_12),
+                right=ft.BorderSide(1, ft.Colors.BLACK_12),
+                bottom=ft.BorderSide(1, ft.Colors.BLACK_12),
+                left=ft.BorderSide(1, ft.Colors.BLACK_12)
             ),
             expand=True
         )
@@ -159,16 +159,22 @@ async def main(page: ft.Page):
         # Обновление истории реле
         relay_history_column.controls.clear()
         if not state.relay_history:
-            relay_history_column.controls.append(ft.Text("Нет данных", color=ft.Colors.BLACK54))
+            relay_history_column.controls.append(ft.Text("Нет данных", color=ft.Colors.BLACK_54))
         for item in reversed(state.relay_history): # Свежие сверху
             ts = item.get("time", 0)
             st = item.get("state", 0)
-            dt_str = datetime.fromtimestamp(ts).strftime('%d.%m.%Y %H:%M:%S') if ts > 0 else "N/A"
+            if ts > 946684800:  # > year 2000
+                dt_str = datetime.fromtimestamp(ts).strftime('%d.%m.%Y %H:%M:%S')
+            elif ts > 0:
+                dt_str = f"До синхр. (+{ts}с)"
+            else:
+                dt_str = "Нет времени"
+            
             status_str = "Включено" if st == 1 else "Выключено"
-            color = PRIMARY_COLOR if st == 1 else ft.Colors.BLACK54
+            color = PRIMARY_COLOR if st == 1 else ft.Colors.BLACK_54
             
             row = ft.Row([
-                ft.Text(dt_str, expand=1, color=ft.Colors.BLACK87),
+                ft.Text(dt_str, expand=1, color=ft.Colors.BLACK_87),
                 ft.Text(status_str, expand=1, text_align=ft.TextAlign.RIGHT, color=color, weight=ft.FontWeight.W_500),
             ])
             relay_history_column.controls.append(row)
@@ -192,10 +198,24 @@ async def main(page: ft.Page):
                     points_hum.append(fch.LineChartDataPoint(i, item.get("hum", 0)))
                     
                     if i % step == 0 or i == len(sorted_hist) - 1:
-                        dt_text = datetime.fromtimestamp(item.get("time", 0)).strftime('%d.%m\n%H:%M')
+                        ts = item.get("time", 0)
+                        if ts > 946684800:
+                            dt_text = datetime.fromtimestamp(ts).strftime('%d.%m\n%H:%M')
+                        elif ts > 0:
+                            dt_text = f"+{ts}с"
+                        else:
+                            dt_text = "--"
                         x_labels.append(fch.ChartAxisLabel(value=i, label=ft.Text(dt_text, size=10, text_align=ft.TextAlign.CENTER)))
                 
                 if points_temp:
+                    all_vals = [item.get("temp", 0) for item in sorted_hist] + [item.get("hum", 0) for item in sorted_hist]
+                    min_val = min(all_vals) if all_vals else 0
+                    max_val = max(all_vals) if all_vals else 100
+                    
+                    calced_min_y = max(0, int(min_val - 5))
+                    calced_max_y = int(max_val + 5)
+                    y_interval = max(1, (calced_max_y - calced_min_y) // 5)
+                    
                     chart = fch.LineChart(
                         data_series=[
                             fch.LineChartData(
@@ -217,16 +237,16 @@ async def main(page: ft.Page):
                             bottom=ft.BorderSide(1, ft.Colors.TRANSPARENT),
                             left=ft.BorderSide(1, ft.Colors.TRANSPARENT)
                         ),
-                        horizontal_grid_lines=fch.ChartGridLines(interval=10, color=ft.Colors.BLACK12, width=1),
-                        vertical_grid_lines=fch.ChartGridLines(interval=10, color=ft.Colors.BLACK12, width=1),
-                        left_axis=fch.ChartAxis(label_size=40),
+                        horizontal_grid_lines=fch.ChartGridLines(interval=y_interval, color=ft.Colors.BLACK_12, width=1),
+                        vertical_grid_lines=fch.ChartGridLines(interval=step, color=ft.Colors.BLACK_12, width=1),
+                        left_axis=fch.ChartAxis(labels=[fch.ChartAxisLabel(value=v, label=ft.Text(str(int(v)), size=12)) for v in range(calced_min_y, calced_max_y + y_interval, y_interval)], label_size=40),
                         bottom_axis=fch.ChartAxis(labels=x_labels, label_size=35), # Показываем X с датой и временем
                         tooltip=fch.LineChartTooltip(bgcolor=ft.Colors.WHITE),
                         expand=True,
                         min_x=0,
                         max_x=len(points_temp)-1 if points_temp else 10,
-                        min_y=0,
-                        max_y=100  # Влажность до 100, температура до ~50
+                        min_y=calced_min_y,
+                        max_y=calced_max_y
                     )
                     
                     chart_legend = ft.Row([
@@ -241,12 +261,12 @@ async def main(page: ft.Page):
                         ft.Container(content=chart, expand=True, padding=10)
                     ], expand=True)
                 else:
-                    chart_container.content = ft.Text("Недостаточно данных для графика", color=ft.Colors.BLACK54)
+                    chart_container.content = ft.Text("Недостаточно данных для графика", color=ft.Colors.BLACK_54)
             except Exception as e:
                 print(f"Chart error: {e}")
                 chart_container.content = ft.Text("Ошибка построения графика", color=ft.Colors.RED)
         else:
-            chart_container.content = ft.Text("Нет данных датчика", color=ft.Colors.BLACK54)
+            chart_container.content = ft.Text("Нет данных датчика", color=ft.Colors.BLACK_54)
             
         try:
             page.update()
@@ -288,14 +308,14 @@ async def main(page: ft.Page):
         ft.Container(height=10),
         ft.Container(
             content=ft.Column([
-                ft.Text("Измените адрес, если mDNS в вашей Wi-Fi сети не поддерживается", size=14, color=ft.Colors.BLACK54),
+                ft.Text("Измените адрес, если mDNS в вашей Wi-Fi сети не поддерживается", size=14, color=ft.Colors.BLACK_54),
                 ft.Container(height=10),
                 ft.Row([
                     settings_ip_input,
                 ]),
                 ft.Container(height=10),
                 ft.Row([
-                    ft.ElevatedButton("Сохранить и переподключиться", on_click=save_settings, bgcolor=PRIMARY_COLOR, color=ft.Colors.WHITE)
+                    ft.Button("Сохранить и переподключиться", on_click=save_settings, bgcolor=PRIMARY_COLOR, color=ft.Colors.WHITE)
                 ], alignment=ft.MainAxisAlignment.CENTER)
             ]),
             bgcolor=BG_CARD_COLOR,
@@ -303,10 +323,10 @@ async def main(page: ft.Page):
             padding=20,
             margin=ft.Margin.only(top=10, bottom=10),
             border=ft.Border(
-                top=ft.BorderSide(1, ft.Colors.BLACK12),
-                right=ft.BorderSide(1, ft.Colors.BLACK12),
-                bottom=ft.BorderSide(1, ft.Colors.BLACK12),
-                left=ft.BorderSide(1, ft.Colors.BLACK12)
+                top=ft.BorderSide(1, ft.Colors.BLACK_12),
+                right=ft.BorderSide(1, ft.Colors.BLACK_12),
+                bottom=ft.BorderSide(1, ft.Colors.BLACK_12),
+                left=ft.BorderSide(1, ft.Colors.BLACK_12)
             ),
             expand=True
         )
@@ -342,7 +362,13 @@ async def main(page: ft.Page):
     # Первое обновление для установки начальных значений
     update_all_views()
     
-    # Запускаем фоновую задачу подключения к WebSocket
-    asyncio.create_task(ws_client.connect())
+        # Запускаем фоновую задачу подключения к WebSocket
+    ws_task = asyncio.create_task(ws_client.connect())
+
+    def on_disconnect(e):
+        if ws_task and not ws_task.done():
+            ws_task.cancel()
+
+    page.on_disconnect = on_disconnect
 
 ft.run(main)
